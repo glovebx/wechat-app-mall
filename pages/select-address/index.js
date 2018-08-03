@@ -11,7 +11,7 @@ Page({
     wx.request({
       url: 'https://api.it120.cc/'+ app.globalData.subDomain +'/user/shipping-address/update',
       data: {
-        token:app.globalData.token,
+        token: wx.getStorageSync('token'),
         id:id,
         isDefault:'true'
       },
@@ -46,12 +46,16 @@ Page({
     wx.request({
       url: 'https://api.it120.cc/'+ app.globalData.subDomain +'/user/shipping-address/list',
       data: {
-        token:app.globalData.token
+        token: wx.getStorageSync('token')
       },
       success: (res) =>{
         if (res.data.code == 0) {
           that.setData({
             addressList:res.data.data
+          });
+        } else if (res.data.code == 700){
+          that.setData({
+            addressList: null
           });
         }
       }

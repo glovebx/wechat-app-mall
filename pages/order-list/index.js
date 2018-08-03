@@ -2,33 +2,15 @@ var wxpay = require('../../utils/pay.js')
 var app = getApp()
 Page({
   data:{
-    statusType:["全部","待付款","待发货","待收货","已完成"],
-    currentTpye:0,
-    tabClass: ["", "", "", "", ""],
-    orderList:[
-      {
-        goodsImg:"/images/goods02.png",
-        des:"爱马仕（HERMES）大地男士香水大地男士香水大地如果有两行就这样显示超出部分用省…超出部分用省…",
-        pics:['/images/goods02.png','/images/goods02.png','/images/goods02.png','/images/goods02.png','/images/goods02.png','/images/goods02.png','/images/goods02.png','/images/goods02.png'],
-        price:"300.00",
-        orderDate:"2017.03.04 10:33:33",
-        orderStatus:"已关闭"
-      },
-      {
-        goodsImg:"/images/goods02.png",
-        des:"爱马仕（HERMES）大地男士香水大地男士香水大地如果有两行就这样显示超出部分用省…超出部分用省…",
-        pics:['/images/goods02.png','/images/goods02.png','/images/goods02.png','/images/goods02.png'],
-        price:"400.00",
-        orderDate:"2017.03.05 10:33:33",
-        orderStatus:"待付款"
-      },
-    ]
+    statusType: ["待付款", "待发货", "待收货", "待评价", "已完成"],
+    currentType:0,
+    tabClass: ["", "", "", "", ""]
   },
   statusTap:function(e){
      var curType =  e.currentTarget.dataset.index;
-     this.data.currentTpye = curType
+     this.data.currentType = curType
      this.setData({
-      currentTpye:curType
+       currentType:curType
      });
      this.onShow();
   },
@@ -50,7 +32,7 @@ Page({
           wx.request({
             url: 'https://api.it120.cc/' + app.globalData.subDomain + '/order/close',
             data: {
-              token: app.globalData.token,
+              token: wx.getStorageSync('token'),
               orderId: orderId
             },
             success: (res) => {
@@ -65,9 +47,55 @@ Page({
     })
   },
   toPayTap:function(e){
+    var that = this;
     var orderId = e.currentTarget.dataset.id;
     var money = e.currentTarget.dataset.money;
-    wxpay.wxpay(app, money, orderId, "/pages/order-list/index");
+    var needScore = e.currentTarget.dataset.score;
+    wx.request({
+      url: 'https://api.it120.cc/' + app.globalData.subDomain + '/user/amount',
+      data: {
+        token: wx.getStorageSync('token')
+      },
+      success: function (res) {
+        if (res.data.code == 0) {
+          // res.data.data.balance
+          money = money - res.data.data.balance;
+          if (res.data.data.score < needScore) {
+            wx.showModal({
+              title: '错误',
+              content: '您的积分不足，无法支付',
+              showCancel: false
+            })
+            return;
+          }
+          if (money <= 0) {
+            // 直接使用余额支付
+            wx.request({
+              url: 'https://api.it120.cc/' + app.globalData.subDomain + '/order/pay',
+              method:'POST',
+              header: {
+                'content-type': 'application/x-www-form-urlencoded'
+              },
+              data: {
+                token: wx.getStorageSync('token'),
+                orderId: orderId
+              },
+              success: function (res2) {
+                that.onShow();
+              }
+            })
+          } else {
+            wxpay.wxpay(app, money, orderId, "/pages/order-list/index");
+          }
+        } else {
+          wx.showModal({
+            title: '错误',
+            content: '无法获取用户资金信息',
+            showCancel: false
+          })
+        }
+      }
+    })    
   },
   onLoad:function(options){
     // 生命周期函数--监听页面加载
@@ -77,51 +105,64 @@ Page({
     // 生命周期函数--监听页面初次渲染完成
  
   },
+  getOrderStatistics : function () {
+    var that = this;
+    wx.request({
+      url: 'https://api.it120.cc/' + app.globalData.subDomain + '/order/statistics',
+      data: { token: wx.getStorageSync('token') },
+      success: (res) => {
+        wx.hideLoading();
+        if (res.data.code == 0) {
+          var tabClass = that.data.tabClass;
+          if (res.data.data.count_id_no_pay > 0) {
+            tabClass[0] = "red-dot"
+          } else {
+            tabClass[0] = ""
+          }
+          if (res.data.data.count_id_no_transfer > 0) {
+            tabClass[1] = "red-dot"
+          } else {
+            tabClass[1] = ""
+          }
+          if (res.data.data.count_id_no_confirm > 0) {
+            tabClass[2] = "red-dot"
+          } else {
+            tabClass[2] = ""
+          }
+          if (res.data.data.count_id_no_reputation > 0) {
+            tabClass[3] = "red-dot"
+          } else {
+            tabClass[3] = ""
+          }
+          if (res.data.data.count_id_success > 0) {
+            //tabClass[4] = "red-dot"
+          } else {
+            //tabClass[4] = ""
+          }
+
+          that.setData({
+            tabClass: tabClass,
+          });
+        }
+      }
+    })
+  },
   onShow:function(){
     // 获取订单列表
     wx.showLoading();
     var that = this;
     var postData = {
-      token: app.globalData.token
+      token: wx.getStorageSync('token')
     };
-    if (that.data.currentTpye == 1) {
-      postData.status = 0
-    }
-    if (that.data.currentTpye == 2) {
-      postData.status = 1
-    }
-    if (that.data.currentTpye == 3) {
-      postData.status = 2
-    }
-    if (that.data.currentTpye == 4) {
-      postData.status = 4
-    }
+    postData.status = that.data.currentType;
+    this.getOrderStatistics();
     wx.request({
       url: 'https://api.it120.cc/' + app.globalData.subDomain + '/order/list',
       data: postData,
       success: (res) => {
         wx.hideLoading();
         if (res.data.code == 0) {
-          var tabClass = that.data.tabClass;
-          if (that.data.currentTpye == 0) {
-            for (var i = 0; i < res.data.data.orderList.length; i++) {
-              var order = res.data.data.orderList[i]
-              if (order.status == 0) {
-                tabClass[1] = "red-dot"
-              }
-              if (order.status == 1) {
-                tabClass[2] = "red-dot"
-              }
-              if (order.status == 2) {
-                tabClass[3] = "red-dot"
-              }
-              if (order.status == 4) {
-                tabClass[4] = "red-dot"
-              }
-            }
-          }
           that.setData({
-            tabClass: tabClass,
             orderList: res.data.data.orderList,
             logisticsMap : res.data.data.logisticsMap,
             goodsMap : res.data.data.goodsMap

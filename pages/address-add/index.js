@@ -57,8 +57,8 @@ Page({
     }
     var cityId = commonCityData.cityData[this.data.selProvinceIndex].cityList[this.data.selCityIndex].id;
     var districtId;
-    if (this.data.selDistrict == "请选择"){
-      districtId = cityId;
+    if (this.data.selDistrict == "请选择" || !this.data.selDistrict){
+      districtId = '';
     } else {
       districtId = commonCityData.cityData[this.data.selProvinceIndex].cityList[this.data.selCityIndex].districtList[this.data.selDistrictIndex].id;
     }
@@ -88,7 +88,7 @@ Page({
     wx.request({
       url: 'https://api.it120.cc/' + app.globalData.subDomain + '/user/shipping-address/' + apiAddoRuPDATE,
       data: {
-        token: app.globalData.token,
+        token: wx.getStorageSync('token'),
         id: apiAddid,
         provinceId: commonCityData.cityData[this.data.selProvinceIndex].id,
         cityId: cityId,
@@ -151,7 +151,9 @@ Page({
       selProvince:selIterm.name,
       selProvinceIndex:event.detail.value,
       selCity:'请选择',
-      selDistrict:'请选择'
+      selCityIndex:0,
+      selDistrict:'请选择',
+      selDistrictIndex: 0
     })
     this.initCityData(2, selIterm)
   },
@@ -160,16 +162,19 @@ Page({
     this.setData({
       selCity:selIterm.name,
       selCityIndex:event.detail.value,
-      selDistrict:'请选择'
+      selDistrict: '请选择',
+      selDistrictIndex: 0
     })
     this.initCityData(3, selIterm)
   },
   bindPickerChange:function (event) {
     var selIterm = commonCityData.cityData[this.data.selProvinceIndex].cityList[this.data.selCityIndex].districtList[event.detail.value];
-    this.setData({
-      selDistrict:selIterm.name,
-      selDistrictIndex:event.detail.value
-    })
+    if (selIterm && selIterm.name && event.detail.value) {
+      this.setData({
+        selDistrict: selIterm.name,
+        selDistrictIndex: event.detail.value
+      })
+    }
   },
   onLoad: function (e) {
     var that = this;
@@ -181,7 +186,7 @@ Page({
       wx.request({
         url: 'https://api.it120.cc/' + app.globalData.subDomain + '/user/shipping-address/detail',
         data: {
-          token: app.globalData.token,
+          token: wx.getStorageSync('token'),
           id: id
         },
         success: function (res) {
@@ -190,10 +195,11 @@ Page({
             that.setData({
               id:id,
               addressData: res.data.data,
-              //selProvince: res.data.data.provinceStr,
-              //selCity: res.data.data.cityStr,
-              //selDistrict: res.data.data.areaStr
-            });
+              selProvince: res.data.data.provinceStr,
+              selCity: res.data.data.cityStr,
+              selDistrict: res.data.data.areaStr
+              });
+            that.setDBSaveAddressId(res.data.data);
             return;
           } else {
             wx.showModal({
@@ -204,9 +210,26 @@ Page({
           }
         }
       })
-      // 
     }
   },
+  setDBSaveAddressId: function(data) {
+    var retSelIdx = 0;
+    for (var i = 0; i < commonCityData.cityData.length; i++) {
+      if (data.provinceId == commonCityData.cityData[i].id) {
+        this.data.selProvinceIndex = i;
+        for (var j = 0; j < commonCityData.cityData[i].cityList.length; j++) {
+          if (data.cityId == commonCityData.cityData[i].cityList[j].id) {
+            this.data.selCityIndex = j;
+            for (var k = 0; k < commonCityData.cityData[i].cityList[j].districtList.length; k++) {
+              if (data.districtId == commonCityData.cityData[i].cityList[j].districtList[k].id) {
+                this.data.selDistrictIndex = k;
+              }
+            }
+          }
+        }
+      }
+    }
+   },
   selectCity: function () {
     
   },
@@ -221,7 +244,7 @@ Page({
           wx.request({
             url: 'https://api.it120.cc/' + app.globalData.subDomain + '/user/shipping-address/delete',
             data: {
-              token: app.globalData.token,
+              token: wx.getStorageSync('token'),
               id: id
             },
             success: (res) => {
@@ -231,6 +254,44 @@ Page({
         } else if (res.cancel) {
           console.log('用户点击取消')
         }
+      }
+    })
+  },
+  readFromWx : function () {
+    let that = this;
+    wx.chooseAddress({
+      success: function (res) {
+        let provinceName = res.provinceName;
+        let cityName = res.cityName;
+        let diatrictName = res.countyName;
+        let retSelIdx = 0;
+
+        for (var i = 0; i < commonCityData.cityData.length; i++) {
+          if (provinceName == commonCityData.cityData[i].name) {
+            let eventJ = { detail: { value:i }};
+            that.bindPickerProvinceChange(eventJ);
+            that.data.selProvinceIndex = i;
+            for (var j = 0; j < commonCityData.cityData[i].cityList.length; j++) {
+              if (cityName == commonCityData.cityData[i].cityList[j].name) {
+                //that.data.selCityIndex = j;
+                eventJ = { detail: { value: j } };
+                that.bindPickerCityChange(eventJ);
+                for (var k = 0; k < commonCityData.cityData[i].cityList[j].districtList.length; k++) {
+                  if (diatrictName == commonCityData.cityData[i].cityList[j].districtList[k].name) {
+                    //that.data.selDistrictIndex = k;
+                    eventJ = { detail: { value: k } };
+                    that.bindPickerChange(eventJ);
+                  }
+                }
+              }
+            }
+            
+          }
+        }
+
+        that.setData({
+          wxaddress: res,
+        });
       }
     })
   }

@@ -5,6 +5,7 @@ Page({
     goodsList:{
       saveHidden:true,
       totalPrice:0,
+      totalScoreToPay: 0,
       allSelect:true,
       noSelect:false,
       list:[]
@@ -34,9 +35,9 @@ Page({
   },
   onLoad: function () {
       this.initEleWidth();
-      this.onshow();
+      this.onShow();
   },
-  onshow: function(){
+  onShow: function(){
       var shopList = [];
       // 获取购物车数据
       var shopCarInfoMem = wx.getStorageSync('shopCarInfo');
@@ -116,12 +117,16 @@ Page({
    totalPrice:function(){
       var list = this.data.goodsList.list;
       var total = 0;
+      let totalScoreToPay = 0;
       for(var i = 0 ; i < list.length ; i++){
           var curItem = list[i];
           if(curItem.active){
             total+= parseFloat(curItem.price)*curItem.number;
+            totalScoreToPay += curItem.score * curItem.number;
           }
       }
+      this.data.goodsList.totalScoreToPay = totalScoreToPay;
+      total = parseFloat(total.toFixed(2));//js浮点计算bug，取两位小数精度
       return total;
    },
    allSelect:function(){
@@ -154,13 +159,14 @@ Page({
       }
    },
    setGoodsList:function(saveHidden,total,allSelect,noSelect,list){
-      this.setData({
+     this.setData({
         goodsList:{
           saveHidden:saveHidden,
           totalPrice:total,
           allSelect:allSelect,
           noSelect:noSelect,
-          list:list
+          list:list,
+          totalScoreToPay: this.data.goodsList.totalScoreToPay
         }
       });
       var shopCarInfo = {};
@@ -193,13 +199,30 @@ Page({
       this.setGoodsList(this.getSaveHide(),this.totalPrice(),!currentAllSelect,this.noSelect(),list);
    },
    jiaBtnTap:function(e){
+	var that = this
     var index = e.currentTarget.dataset.index;
-    var list = this.data.goodsList.list;
+    var list = that.data.goodsList.list;
     if(index!=="" && index != null){
-      if(list[parseInt(index)].number<10){
-        list[parseInt(index)].number++; 
-        this.setGoodsList(this.getSaveHide(),this.totalPrice(),this.allSelect(),this.noSelect(),list);
-      }
+      // 添加判断当前商品购买数量是否超过当前商品可购买库存
+      var carShopBean = list[parseInt(index)];
+      var carShopBeanStores = 0;
+      wx.request({
+        url: 'https://api.it120.cc/' + app.globalData.subDomain + '/shop/goods/detail',
+        data: {
+          id: carShopBean.goodsId
+        },
+        success: function (res) {
+          carShopBeanStores = res.data.data.basicInfo.stores;
+          console.log(' currnet good id and stores is :',carShopBean.goodsId, carShopBeanStores)
+          if (list[parseInt(index)].number < carShopBeanStores) {
+            list[parseInt(index)].number++;
+            that.setGoodsList(that.getSaveHide(), that.totalPrice(), that.allSelect(), that.noSelect(), list);
+          }
+          that.setData({
+            curTouchGoodStore: carShopBeanStores
+          })
+        }
+      })
     }
    },
    jianBtnTap:function(e){
@@ -234,38 +257,49 @@ Page({
    },
    deleteSelected:function(){
       var list = this.data.goodsList.list;
-      for(var i = 0 ; i < list.length ; i++){
-            var curItem = list[i];
+     /*
+      for(let i = 0 ; i < list.length ; i++){
+            let curItem = list[i];
             if(curItem.active){
               list.splice(i,1);
             }
       }
+      */
+     // above codes that remove elements in a for statement may change the length of list dynamically
+     list = list.filter(function(curGoods) {
+        return !curGoods.active;
+     });
      this.setGoodsList(this.getSaveHide(),this.totalPrice(),this.allSelect(),this.noSelect(),list);
     },
     toPayOrder:function(){
       wx.showLoading();
       var that = this;
       if (this.data.goodsList.noSelect) {
+        wx.hideLoading();
         return;
       }
       // 重新计算价格，判断库存
       var shopList = [];
       var shopCarInfoMem = wx.getStorageSync('shopCarInfo');
       if (shopCarInfoMem && shopCarInfoMem.shopList) {
-        shopList = shopCarInfoMem.shopList
+        // shopList = shopCarInfoMem.shopList
+        shopList = shopCarInfoMem.shopList.filter(entity => {
+          return entity.active;
+        });
       }
       if (shopList.length == 0) {
+        wx.hideLoading();
         return;
       }
       var isFail = false;
       var doneNumber = 0;
       var needDoneNUmber = shopList.length;
-      for (var i =0; i < shopList.length; i++) {
+      for (let i =0; i < shopList.length; i++) {
         if (isFail) {
           wx.hideLoading();
           return;
         }
-        var carShopBean = shopList[i];
+        let carShopBean = shopList[i];
         // 获取价格和库存
         if (!carShopBean.propertyChildIds || carShopBean.propertyChildIds == "") {
           wx.request({
